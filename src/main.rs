@@ -93,15 +93,16 @@ fn main() {
     println!("query probes list {}", best_centroid);
 
     let candidates = &lists[best_centroid];
-    let mut best_distance = f32::INFINITY;
-    let mut best_point = String::new();
-
-    for point in candidates {
-        let d = euclidean_distance(point, &query);
-        if d < best_distance {
-            best_distance = d;
-            best_point = point.id.clone();
-        }
+    let mut scored : Vec<(f32, String)> = Vec::new();
+    for point in candidates{
+        let distance = euclidean_distance(point, &query);
+        scored.push((distance,point.id.clone()));
     }
-    println!("ivf best point {} -> distance {}", best_point, best_distance);
+    scored.sort_by(|a,b| a.0.partial_cmp(&b.0).unwrap());
+
+    let take = k.min(scored.len());
+    for i in 0..take {
+        println!("id {} -> distance {}", scored[i].1, scored[i].0);
+    }
+
 }
