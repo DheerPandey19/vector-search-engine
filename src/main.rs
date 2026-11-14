@@ -1,4 +1,5 @@
-use vector_db::metric::{Point, euclidean_distance};
+use vector_db::ivf::seed_centroids;
+use vector_db::metric::{euclidean_distance, euclidean_distance_slice, Point};
 
 fn main() {
     let k = 2;
@@ -22,6 +23,11 @@ fn main() {
         },
     ];
 
+    let nlist = 2;
+    let seed = 42;
+    let mut centroids = seed_centroids(&points, nlist, seed);
+    println!("seeded centroids: {:?}", centroids);
+
     // --- exact baseline (scan all points) ---
     println!("exact top-k:");
     let mut scored: Vec<(f32, String)> = Vec::new();
@@ -34,17 +40,6 @@ fn main() {
         println!("id {} -> distance {}", scored[i].1, scored[i].0);
     }
 
-    // --- toy IVFFlat: centroids + inverted lists ---
-    let centroids = vec![
-        Point {
-            id: String::from("c0"),
-            embeddings: vec![0.0, 1.0],
-        },
-        Point {
-            id: String::from("c1"),
-            embeddings: vec![1.0, 0.0],
-        },
-    ];
 
     let mut lists: Vec<Vec<Point>> = Vec::new();
     for _ in 0..centroids.len() {
@@ -54,10 +49,11 @@ fn main() {
     // BUILD: assign each point to nearest centroid
     for point in &points {
         let mut best_i = 0;
-        let mut best_distance = euclidean_distance(point, &centroids[0]);
+        let mut best_distance =
+            euclidean_distance_slice(&point.embeddings, &centroids[0]);
 
         for i in 1..centroids.len() {
-            let d = euclidean_distance(point, &centroids[i]);
+            let d = euclidean_distance_slice(&point.embeddings, &centroids[i]);
             if d < best_distance {
                 best_distance = d;
                 best_i = i;
@@ -66,13 +62,36 @@ fn main() {
         println!("{} -> list {}", point.id, best_i);
         lists[best_i].push(point.clone());
     }
+    // UPDATE: move each centroid to the mean of its list
+    for list_i in 0..nlist{
+        if lists[list_i].is_empty(){
+            continue;
+        }
 
-    // QUERY: probe nearest centroid's list, find best point in it
+        let dim = centroids[list_i].len();
+        let mut new_centroid = vec![0.0;dim];
+
+        for points in &lists[list_i]{
+            for d in 0..dim{
+                new_centroid[d] += points.embeddings[d];
+            }
+        }
+
+        let count = lists[list_i].len() as f32;
+        for d in 0..dim{
+            new_centroid[d]/=count;
+        }
+
+        centroids[list_i] = new_centroid;
+    }
+
+    // QUERY: probe nearest centroid
     let mut best_centroid = 0;
-    let mut best_centroid_distance = euclidean_distance(&query, &centroids[0]);
+    let mut best_centroid_distance =
+        euclidean_distance_slice(&query.embeddings, &centroids[0]);
 
     for i in 1..centroids.len() {
-        let d = euclidean_distance(&query, &centroids[i]);
+        let d = euclidean_distance_slice(&query.embeddings, &centroids[i]);
         if d < best_centroid_distance {
             best_centroid_distance = d;
             best_centroid = i;
