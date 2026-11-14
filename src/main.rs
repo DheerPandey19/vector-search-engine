@@ -1,16 +1,4 @@
-#[derive(Clone)]
-struct Point {
-    embeddings: Vec<f32>,
-    id: String,
-}
-
-fn euclidean_distance(a: &Point, b: &Point) -> f32 {
-    let mut distance = 0.0;
-    for i in 0..a.embeddings.len() {
-        distance += (a.embeddings[i] - b.embeddings[i]).powi(2);
-    }
-    distance.sqrt()
-}
+use vector_db::metric::{Point, euclidean_distance};
 
 fn main() {
     let k = 2;
