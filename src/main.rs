@@ -1,4 +1,4 @@
-use vector_db::ivf::seed_centroids;
+use vector_db::ivf::{assign_to_list, seed_centroids, update_centroids};
 use vector_db::metric::{euclidean_distance, euclidean_distance_slice, Point};
 
 fn main() {
@@ -111,5 +111,10 @@ fn main() {
     for i in 0..take {
         println!("id {} -> distance {}", scored[i].1, scored[i].0);
     }
+
+    let lists = assign_to_list(&points, &centroids); // your function name
+    let centroids = update_centroids(&points, &lists);
+    println!("lists: {:?}", lists);
+    println!("updated centroids: {:?}", centroids);
 
 }

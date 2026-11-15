@@ -1,3 +1,2 @@
 pub mod metric;
-pub mod flat;
 pub mod ivf;
