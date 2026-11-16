@@ -1,5 +1,6 @@
-use vector_db::ivf::{assign_to_list, seed_centroids, update_centroids};
+use vector_db::ivf::{assign_to_list, seed_centroids, update_centroids, train_ivf_flat};
 use vector_db::metric::{euclidean_distance, euclidean_distance_slice, Point};
+
 
 fn main() {
     let k = 2;
@@ -116,5 +117,9 @@ fn main() {
     let centroids = update_centroids(&points, &lists);
     println!("lists: {:?}", lists);
     println!("updated centroids: {:?}", centroids);
+
+    let index = train_ivf_flat(&points, nlist, 5, seed);
+    println!("trained centroids: {:?}", index.centroids);
+    println!("trained lists: {:?}", index.lists);
 
 }

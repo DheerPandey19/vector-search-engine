@@ -7,6 +7,22 @@ pub struct IvfFlatIndex {
     pub centroids: Vec<Vec<f32>>,
     pub lists: Vec<Vec<usize>>,
 }
+pub fn train_ivf_flat(
+    points: &[Point],
+    nlist: usize,
+    iters: usize,
+    seed: u64,
+) -> IvfFlatIndex {
+    let mut centroids = seed_centroids(points, nlist, seed);
+
+    for _ in 0..iters {
+        let lists = assign_to_list(points, &centroids);
+        centroids = update_centroids(points, &lists);
+    }
+
+    let lists = assign_to_list(points, &centroids);
+    IvfFlatIndex { centroids, lists }
+}
 
 pub fn seed_centroids(points: &[Point], nlist: usize, seed: u64) -> Vec<Vec<f32>> {
     let mut rng = StdRng::seed_from_u64(seed);
