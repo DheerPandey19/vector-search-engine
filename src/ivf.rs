@@ -86,3 +86,49 @@ pub fn update_centroids(points: &[Point], lists: &[Vec<usize>]) -> Vec<Vec<f32>>
 
     new_centroids
 }
+
+pub fn search_lists(
+    index: &IvfFlatIndex,
+    points: &[Point],
+    query: &[f32],
+    k: usize,
+    probes:usize,
+) -> Vec<(f32,usize)> {
+
+    //score the distance to each centriod vs query
+    let mut centroid_scores : Vec<(f32, usize)> = Vec::new();
+    for(i,centroid) in index.centroids.iter().enumerate() {
+        let d = euclidean_distance_slice(query, centroid);
+        centroid_scores.push((d,i));
+    }
+
+    centroid_scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+    //gather the candidates from nearest pc(probe count) lists
+
+    let probe_count = probes.min(centroid_scores.len());
+    
+    let mut candidates : Vec<usize> = Vec::new();
+    for i in 0..probe_count{
+        let list_i = centroid_scores[i].1;
+        for &point_i in &index.lists[list_i] {
+            candidates.push(point_i);
+        }
+    }
+
+       // 3) exact distances for candidates, keep top-k
+       let mut scored: Vec<(f32, usize)> = Vec::new();
+       for point_i in candidates {
+           let d = euclidean_distance_slice(query, &points[point_i].embeddings);
+           scored.push((d, point_i));
+       }
+       scored.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+       scored.truncate(k.min(scored.len()));
+       scored
+
+
+
+
+
+}
+

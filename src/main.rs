@@ -1,4 +1,4 @@
-use vector_db::ivf::{assign_to_list, seed_centroids, update_centroids, train_ivf_flat};
+use vector_db::ivf::{assign_to_list, seed_centroids, update_centroids, train_ivf_flat,search_lists};
 use vector_db::metric::{euclidean_distance, euclidean_distance_slice, Point};
 
 
@@ -118,8 +118,12 @@ fn main() {
     println!("lists: {:?}", lists);
     println!("updated centroids: {:?}", centroids);
 
+    // let index = train_ivf_flat(&points, nlist, 5, seed);
+    // println!("trained centroids: {:?}", index.centroids);
+    // println!("trained lists: {:?}", index.lists);
+
     let index = train_ivf_flat(&points, nlist, 5, seed);
-    println!("trained centroids: {:?}", index.centroids);
-    println!("trained lists: {:?}", index.lists);
+    let results = search_lists(&index, &points, &query.embeddings, k, 2);
+    println!("ivf search: {:?}", results);
 
 }
