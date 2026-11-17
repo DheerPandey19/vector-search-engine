@@ -1,5 +1,6 @@
 use vector_db::ivf::{assign_to_list, seed_centroids, update_centroids, train_ivf_flat,search_lists};
 use vector_db::metric::{euclidean_distance, euclidean_distance_slice, Point};
+use vector_db::flat::search_flat;
 
 
 fn main() {
@@ -125,5 +126,7 @@ fn main() {
     let index = train_ivf_flat(&points, nlist, 5, seed);
     let results = search_lists(&index, &points, &query.embeddings, k, 2);
     println!("ivf search: {:?}", results);
-
+    
+    let flat = search_flat(&points, &query.embeddings, k);
+    println!("flat search: {:?}", flat);
 }
