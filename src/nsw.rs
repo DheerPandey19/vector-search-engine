@@ -26,6 +26,11 @@ impl NswGraph {
         &self.neighbors[index]
     }
 
+    /// Replace the neighbor list for one point (used after prune).
+    pub fn set_neighbors(&mut self, index: usize, list: Vec<usize>) {
+        self.neighbors[index] = list;
+    }
+
     /// Link `a` and `b` both ways.
     pub fn add_bidirectional(&mut self, a: usize, b: usize) {
         if a == b {
@@ -108,33 +113,95 @@ pub fn search_nsw(
     results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     results
 }
+
 pub fn prune_neighbours(
     points: &[Point],
     owner: usize,
     candidates: &[usize],
     max_connections: usize,
 ) -> Vec<usize> {
-    if max_connections == 0{
+    if max_connections == 0 {
         return Vec::new();
     }
 
-    let mut unique : Vec<usize> = Vec:new();
+    let mut unique: Vec<usize> = Vec::new();
     for &idx in candidates {
-        if idx==owner{
+        if idx == owner {
             continue;
         }
-        if !unique.contains(&idx){
+        if !unique.contains(&idx) {
             unique.push(idx);
         }
     }
 
-    unique.sort_by(|&a,&b|{
+    unique.sort_by(|&a, &b| {
         let da = euclidean_distance_slice(&points[owner].embeddings, &points[a].embeddings);
         let db = euclidean_distance_slice(&points[owner].embeddings, &points[b].embeddings);
         da.partial_cmp(&db).unwrap().then(a.cmp(&b))
     });
 
     unique.truncate(max_connections.min(unique.len()));
-    return unique;
+    unique
+}
 
+/// Insert points 0..n-1 one at a time. Returns (graph, entry_point).
+///
+/// - `max_connections`: max degree after prune (M)
+/// - `ef_construction`: search width while inserting (usually >= M)
+pub fn build_nsw(
+    points: &[Point],
+    max_connections: usize,
+    ef_construction: usize,
+) -> (NswGraph, usize) {
+    let mut graph = NswGraph::new(points.len());
+    if points.is_empty() {
+        return (graph, 0);
+    }
+
+    // First point is the entry; no edges yet.
+    let mut entry = 0;
+
+    for r in 1..points.len() {
+        // Search only among points already inserted: 0..r
+        let found = search_nsw(
+            &graph,
+            &points[..r],
+            &points[r],
+            entry,
+            ef_construction,
+        );
+        let cand: Vec<usize> = found.into_iter().map(|(_, i)| i).collect();
+        let selected = prune_neighbours(points, r, &cand, max_connections);
+
+        // Link new point to the chosen neighbors (both ways).
+        for &m in &selected {
+            graph.add_bidirectional(r, m);
+        }
+
+        // Cap degree on the new node.
+        let pruned_r = prune_neighbours(points, r, graph.neighbors(r), max_connections);
+        graph.set_neighbors(r, pruned_r);
+
+        // Cap degree on older endpoints; if they drop `r`, drop the reverse too.
+        let linked: Vec<usize> = graph.neighbors(r).to_vec();
+        for &m in &linked {
+            let pruned_m = prune_neighbours(points, m, graph.neighbors(m), max_connections);
+            graph.set_neighbors(m, pruned_m);
+
+            if !graph.neighbors(m).contains(&r) {
+                let filtered: Vec<usize> = graph
+                    .neighbors(r)
+                    .iter()
+                    .copied()
+                    .filter(|&x| x != m)
+                    .collect();
+                graph.set_neighbors(r, filtered);
+            }
+        }
+
+        // Next search starts at the newest point.
+        entry = r;
+    }
+
+    (graph, entry)
 }
