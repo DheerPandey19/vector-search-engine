@@ -108,3 +108,33 @@ pub fn search_nsw(
     results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     results
 }
+pub fn prune_neighbours(
+    points: &[Point],
+    owner: usize,
+    candidates: &[usize],
+    max_connections: usize,
+) -> Vec<usize> {
+    if max_connections == 0{
+        return Vec::new();
+    }
+
+    let mut unique : Vec<usize> = Vec:new();
+    for &idx in candidates {
+        if idx==owner{
+            continue;
+        }
+        if !unique.contains(&idx){
+            unique.push(idx);
+        }
+    }
+
+    unique.sort_by(|&a,&b|{
+        let da = euclidean_distance_slice(&points[owner].embeddings, &points[a].embeddings);
+        let db = euclidean_distance_slice(&points[owner].embeddings, &points[b].embeddings);
+        da.partial_cmp(&db).unwrap().then(a.cmp(&b))
+    });
+
+    unique.truncate(max_connections.min(unique.len()));
+    return unique;
+
+}
