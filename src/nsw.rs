@@ -10,7 +10,6 @@ pub struct NswGraph {
 
 impl NswGraph {
     /// `n` is how many points will be in the graph.
-    /// Every point starts with an empty neighbor list.
     pub fn new(n: usize) -> Self {
         Self {
             neighbors: vec![Vec::new(); n],
@@ -19,6 +18,10 @@ impl NswGraph {
 
     pub fn len(&self) -> usize {
         self.neighbors.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.neighbors.is_empty()
     }
 
     /// Borrow the neighbor indexes of one point.
@@ -48,6 +51,44 @@ impl NswGraph {
     }
 }
 
+/// Built NSW index: graph + entry point + construction knobs.
+pub struct NswIndex {
+    pub graph: NswGraph,
+    pub entry: usize,
+    pub max_connections: usize,
+    pub ef_construction: usize,
+}
+
+impl NswIndex {
+    pub fn build(
+        points: &[Point],
+        max_connections: usize,
+        ef_construction: usize,
+    ) -> Self {
+        let (graph, entry) = build_nsw(points, max_connections, ef_construction);
+        Self {
+            graph,
+            entry,
+            max_connections,
+            ef_construction,
+        }
+    }
+
+    /// Search with width `ef_search.max(k)`, then return at most `k` hits.
+    pub fn search(
+        &self,
+        points: &[Point],
+        query: &Point,
+        k: usize,
+        ef_search: usize,
+    ) -> Vec<(f32, usize)> {
+        let ef = ef_search.max(k).max(1);
+        let mut hits = search_nsw(&self.graph, points, query, self.entry, ef);
+        hits.truncate(k.min(hits.len()));
+        hits
+    }
+}
+
 /// Best-first walk on the graph.
 ///
 /// - `entry`: start node (point index)
@@ -69,36 +110,30 @@ pub fn search_nsw(
     let entry_distance =
         euclidean_distance_slice(&query.embeddings, &points[entry].embeddings);
 
-    // C: still to expand — we always expand the nearest pending point.
     let mut candidates: Vec<(f32, usize)> = vec![(entry_distance, entry)];
-    // W: best results so far — trimmed to `ef`.
     let mut results: Vec<(f32, usize)> = vec![(entry_distance, entry)];
     let mut visited = vec![false; points.len()];
     visited[entry] = true;
 
     while !candidates.is_empty() {
-        // Nearest first in C.
         candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         let (cand_dist, cand_idx) = candidates.remove(0);
 
-        // Nearest first in W so the last item is the worst when W is full.
         results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         let worst_dist = results.last().unwrap().0;
 
-        // Stop only when the next candidate is *strictly* worse than W's worst.
         if results.len() >= ef && cand_dist > worst_dist {
             break;
         }
 
         for &neighbor in graph.neighbors(cand_idx) {
-            if visited[neighbor] {
+            if neighbor >= points.len() || visited[neighbor] {
                 continue;
             }
             visited[neighbor] = true;
 
             let d = euclidean_distance_slice(&query.embeddings, &points[neighbor].embeddings);
 
-            // Keep this neighbor if W still has room, or it beats W's worst.
             results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
             let worst = results.last().unwrap().0;
             if results.len() < ef || d < worst {
@@ -144,10 +179,39 @@ pub fn prune_neighbours(
     unique
 }
 
+/// Link `r` to `selected`, then prune both ends so the graph stays reciprocal
+/// and degree-bounded.
+pub fn connect_on_layer(
+    graph: &mut NswGraph,
+    points: &[Point],
+    r: usize,
+    selected: &[usize],
+    max_connections: usize,
+) {
+    for &m in selected {
+        graph.add_bidirectional(r, m);
+    }
+
+    let pruned_r = prune_neighbours(points, r, graph.neighbors(r), max_connections);
+    graph.set_neighbors(r, pruned_r);
+
+    let linked: Vec<usize> = graph.neighbors(r).to_vec();
+    for &m in &linked {
+        let pruned_m = prune_neighbours(points, m, graph.neighbors(m), max_connections);
+        graph.set_neighbors(m, pruned_m);
+        if !graph.neighbors(m).contains(&r) {
+            let filtered: Vec<usize> = graph
+                .neighbors(r)
+                .iter()
+                .copied()
+                .filter(|&x| x != m)
+                .collect();
+            graph.set_neighbors(r, filtered);
+        }
+    }
+}
+
 /// Insert points 0..n-1 one at a time. Returns (graph, entry_point).
-///
-/// - `max_connections`: max degree after prune (M)
-/// - `ef_construction`: search width while inserting (usually >= M)
 pub fn build_nsw(
     points: &[Point],
     max_connections: usize,
@@ -158,11 +222,9 @@ pub fn build_nsw(
         return (graph, 0);
     }
 
-    // First point is the entry; no edges yet.
     let mut entry = 0;
 
     for r in 1..points.len() {
-        // Search only among points already inserted: 0..r
         let found = search_nsw(
             &graph,
             &points[..r],
@@ -172,34 +234,7 @@ pub fn build_nsw(
         );
         let cand: Vec<usize> = found.into_iter().map(|(_, i)| i).collect();
         let selected = prune_neighbours(points, r, &cand, max_connections);
-
-        // Link new point to the chosen neighbors (both ways).
-        for &m in &selected {
-            graph.add_bidirectional(r, m);
-        }
-
-        // Cap degree on the new node.
-        let pruned_r = prune_neighbours(points, r, graph.neighbors(r), max_connections);
-        graph.set_neighbors(r, pruned_r);
-
-        // Cap degree on older endpoints; if they drop `r`, drop the reverse too.
-        let linked: Vec<usize> = graph.neighbors(r).to_vec();
-        for &m in &linked {
-            let pruned_m = prune_neighbours(points, m, graph.neighbors(m), max_connections);
-            graph.set_neighbors(m, pruned_m);
-
-            if !graph.neighbors(m).contains(&r) {
-                let filtered: Vec<usize> = graph
-                    .neighbors(r)
-                    .iter()
-                    .copied()
-                    .filter(|&x| x != m)
-                    .collect();
-                graph.set_neighbors(r, filtered);
-            }
-        }
-
-        // Next search starts at the newest point.
+        connect_on_layer(&mut graph, points, r, &selected, max_connections);
         entry = r;
     }
 
