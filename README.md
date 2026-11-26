@@ -121,5 +121,4 @@ Knobs move the needle a lot: tight graphs can drop NSW recall badly; very wide `
 
 ## References
 
-- Course book: https://skyzh.github.io/vector-db-from-scratch/
 - Classic HNSW paper: Malkov & Yashunin, *Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs*
